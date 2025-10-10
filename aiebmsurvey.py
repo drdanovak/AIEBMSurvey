@@ -16,7 +16,6 @@ PLOTLY_OK = False
 PLOTLY_PDF_OK = False
 try:
     import plotly.graph_objects as go  # type: ignore
-
     PLOTLY_OK = True
     try:
         import kaleido  # type: ignore  # enables fig.to_image for PDF/PNG
@@ -29,7 +28,6 @@ except Exception:
 MATPLOTLIB_OK = False
 try:
     import matplotlib.pyplot as plt  # type: ignore
-
     MATPLOTLIB_OK = True
 except Exception:
     plt = None  # type: ignore
@@ -93,8 +91,7 @@ def compute_subscale_scores(responses: dict[str, int]) -> dict[str, float]:
         out[s] = round(float(np.mean(vals)), 2) if vals else np.nan
     return out
 
-
-def radar_plot(scores_now: dict[str, float], scores_prev: dict[str, float] | None = None):
+def radar_plot(scores_now: dict[str, float]):
     cats = SUBSCALES
     r_now = [scores_now.get(c, 0) if not pd.isna(scores_now.get(c, np.nan)) else 0 for c in cats]
     cats_closed = cats + [cats[0]]
@@ -103,13 +100,9 @@ def radar_plot(scores_now: dict[str, float], scores_prev: dict[str, float] | Non
     if PLOTLY_OK and go is not None:
         fig = go.Figure()
         fig.add_trace(go.Scatterpolar(r=r_now_closed, theta=cats_closed, fill="toself", name="Current", opacity=0.7))
-        if scores_prev is not None:
-            r_prev = [scores_prev.get(c, 0) if not pd.isna(scores_prev.get(c, np.nan)) else 0 for c in cats]
-            r_prev_closed = r_prev + [r_prev[0]]
-            fig.add_trace(go.Scatterpolar(r=r_prev_closed, theta=cats_closed, fill="toself", name="Previous", opacity=0.35))
         fig.update_layout(
             polar=dict(radialaxis=dict(visible=True, range=[1, 7], tickmode="linear", dtick=1)),
-            showlegend=True,
+            showlegend=False,
             margin=dict(l=20, r=20, t=20, b=20),
             height=540,
         )
@@ -123,16 +116,9 @@ def radar_plot(scores_now: dict[str, float], scores_prev: dict[str, float] | Non
         ax.set_thetagrids(np.degrees(angles), labels=cats)
         ax.plot(angles_closed, r_now_closed, label="Current")
         ax.fill(angles_closed, r_now_closed, alpha=0.25)
-        if scores_prev is not None:
-            r_prev = [scores_prev.get(c, 0) if not pd.isna(scores_prev.get(c, np.nan)) else 0 for c in cats]
-            r_prev_closed = r_prev + [r_prev[0]]
-            ax.plot(angles_closed, r_prev_closed, label="Previous")
-            ax.fill(angles_closed, r_prev_closed, alpha=0.15)
-        ax.legend(loc="upper right")
         return fig
     else:
         return None
-
 
 def export_chart(fig) -> tuple[bytes | None, str | None, bytes | None, str | None]:
     """Return (pdf_bytes, pdf_mime, png_bytes, png_mime)."""
@@ -169,6 +155,73 @@ def export_chart(fig) -> tuple[bytes | None, str | None, bytes | None, str | Non
 
     return pdf_bytes, pdf_mime, png_bytes, png_mime
 
+# ---- Tailored messaging for the Canvas report
+BANDS = {
+    "high": (5.5, 7.01),
+    "ok": (4.0, 5.49),
+    "low": (0.0, 3.99),
+}
+ACTIONS = {
+    "AILIT": {
+        "low":  "Watch the LLM crash-course (10–15 min) and practice explaining hallucinations and training data to a peer.",
+        "ok":   "Teach-back: in 2–3 sentences, distinguish AI summaries from guideline-based synthesis.",
+        "high": "Create a 1-paragraph primer for classmates on model provenance and failure modes.",
+    },
+    "VERIF": {
+        "low":  "Pick one AI claim and verify it against a named guideline; paste the citation and version/date in your notes.",
+        "ok":   "Add a simple provenance log template (Sources/Date/Guideline) to your workflow and use it once this week.",
+        "high": "Run a 2-engine cross-check (AI vs. PubMed+Guideline) and note any discrepancies.",
+    },
+    "EQUITY": {
+        "low":  "Rewrite a prompt to remove non-clinical demographic cues; check if the output changes.",
+        "ok":   "Scan one AI-cited trial for population representativeness relative to your clinic.",
+        "high": "Draft a 3-item bias audit checklist for your team to use on patient materials.",
+    },
+    "TRUST": {
+        "low":  "Practice stating uncertainty to a patient using the Ask-Tell-Ask structure.",
+        "ok":   "Write one ‘disagree with AI’ note tied to a guideline citation.",
+        "high": "Model calibration: document one case where verification increased confidence appropriately.",
+    },
+    "COMM": {
+        "low":  "Co-create a 6th-grade–level patient handout and get preceptor feedback.",
+        "ok":   "Role-play responding to AI info a patient brings; aim for curiosity-first language.",
+        "high": "Publish a short ‘How I used AI’ paragraph template for clinic notes.",
+    },
+    "PRO": {
+        "low":  "Locate your institution’s AI policy and list two requirements in your notes.",
+        "ok":   "Add an ‘AI used + verification steps’ line to your documentation template.",
+        "high": "Share an anonymized example of auditable AI use with your team.",
+    },
+    "INTENT": {
+        "low":  "Set one concrete goal (e.g., log sources for your next AI-assisted summary).",
+        "ok":   "Schedule a 15-min block to run a bias check on your next case.",
+        "high": "Mentor a peer through provenance logging on a mini-assignment.",
+    },
+}
+
+def band_of(x: float) -> str:
+    if pd.isna(x):
+        return "low"  # treat missing as low for nudges
+    for name, (lo, hi) in BANDS.items():
+        if lo <= float(x) <= hi:
+            return name
+    return "low"
+
+def make_custom_narrative(subscale_scores: dict[str, float]) -> tuple[list[str], list[str]]:
+    strengths, growth = [], []
+    for s in SUBSCALES:
+        sc = subscale_scores.get(s, np.nan)
+        b = band_of(sc)
+        if b == "high":
+            strengths.append(f"{s} ({sc:.2f})")
+        elif b == "low":
+            growth.append(f"{s} ({'—' if pd.isna(sc) else f'{sc:.2f}'})")
+    return strengths, growth
+
+def topk(scores: dict[str, float], k=2, reverse=True):
+    vals = [(s, v) for s, v in scores.items() if not pd.isna(v)]
+    vals.sort(key=lambda x: x[1], reverse=reverse)
+    return vals[:k]
 
 def make_canvas_report(
     timestamp_iso: str,
@@ -182,10 +235,17 @@ def make_canvas_report(
     langs: str,
     subscale_scores: dict[str, float],
     responses: dict[str, int],
-    prev_scores: dict[str, float] | None = None,
 ) -> str:
-    """Generate a copy-ready text block for Canvas."""
-    # Header and demographics
+    # Completion & overall
+    total_items = len(ITEMS)
+    answered = sum(1 for v in responses.values() if not pd.isna(v))
+    completion = 100.0 * answered / total_items if total_items else 0.0
+    overall = np.nanmean([v for v in subscale_scores.values() if not pd.isna(v)])
+
+    strengths, growth = make_custom_narrative(subscale_scores)
+    highs = topk(subscale_scores, k=2, reverse=True)
+    lows  = topk(subscale_scores, k=2, reverse=False)
+
     lines = []
     lines.append("AI–EBM Survey Report")
     lines.append("====================")
@@ -198,23 +258,42 @@ def make_canvas_report(
     lines.append(f"Specialty: {spec or '—'}")
     lines.append(f"AI Tools Used: {ai_tools or '—'}")
     lines.append(f"Languages: {langs or '—'}")
+    lines.append(f"Completion: {completion:.0f}%  |  Overall mean (1–7): {('—' if pd.isna(overall) else f'{overall:.2f}')}")
     lines.append("")
 
-    # Subscale scores
     lines.append("Subscale Scores (1–7)")
     lines.append("---------------------")
     for s in SUBSCALES:
         cur = subscale_scores.get(s, np.nan)
         cur_str = "—" if pd.isna(cur) else f"{cur:.2f}"
-        if prev_scores is not None and s in prev_scores and not pd.isna(prev_scores[s]) and not pd.isna(cur):
-            delta = cur - float(prev_scores[s])
-            sign = "+" if delta > 0 else ""
-            lines.append(f"- {s}: {cur_str}  ({sign}{delta:.2f} vs. previous)")
-        else:
-            lines.append(f"- {s}: {cur_str}")
+        lines.append(f"- {s}: {cur_str}")
     lines.append("")
 
-    # Item-by-item
+    # Targeted narrative summary
+    lines.append("Personalized Summary")
+    lines.append("--------------------")
+    if strengths:
+        lines.append("Strengths: " + ", ".join(strengths))
+    if growth:
+        lines.append("Growth Areas: " + ", ".join(growth))
+    if not strengths and not growth:
+        lines.append("Balanced profile without clear strengths or gaps identified.")
+    if highs:
+        lines.append("Top areas: " + ", ".join([f"{k} ({v:.2f})" for k, v in highs]))
+    if lows:
+        lines.append("Lowest areas: " + ", ".join([f"{k} ({v:.2f})" for k, v in lows]))
+    lines.append("")
+
+    # Action items tailored by band
+    lines.append("Action Plan (next 1–2 weeks)")
+    lines.append("----------------------------")
+    for s in SUBSCALES:
+        sc = subscale_scores.get(s, np.nan)
+        b = band_of(sc)
+        lines.append(f"- {s}: {ACTIONS[s][b]}")
+    lines.append("")
+
+    # Item-by-item list
     lines.append("Item Responses")
     lines.append("--------------")
     for code, text, _ in ITEMS:
@@ -223,12 +302,10 @@ def make_canvas_report(
         lines.append(f"- {code}: {val_str} — {text}")
     lines.append("")
 
-    # Footer
     lines.append("Notes")
     lines.append("-----")
-    lines.append("Scores are simple means per subscale. 1 = Strongly disagree … 7 = Strongly agree.")
+    lines.append("Scores are means per subscale. 1 = Strongly disagree … 7 = Strongly agree. Lower completion may reduce score stability.")
     return "\n".join(lines)
-
 
 # ==========================
 # UI
@@ -258,10 +335,7 @@ with coly:
 
 st.divider()
 
-# Input style (keep both; default Dots)
-input_style = st.radio("Input style", ["Dots (1–7)", "Slider (1–7)"], horizontal=True, index=0)
-
-# Pagination (groups of 7)
+# ====== Dots-only input (remove slider option entirely) ======
 PAGE_SIZE = 7
 TOTAL_ITEMS = len(ITEMS)
 TOTAL_PAGES = math.ceil(TOTAL_ITEMS / PAGE_SIZE)
@@ -270,25 +344,6 @@ if "page" not in st.session_state:
     st.session_state.page = 0
 if "responses" not in st.session_state:
     st.session_state.responses = {}
-if "prev_scores" not in st.session_state:
-    st.session_state.prev_scores = None
-
-# Compare upload (overlay vs. prior CSV) — put BEFORE compute so it's available for plotting/exports
-st.subheader("Optional: Compare with a previous attempt")
-up = st.file_uploader("Upload a prior results CSV downloaded from this app (pre or post)", type=["csv"])
-if up is not None:
-    try:
-        prev_df = pd.read_csv(up)
-        score_cols = [c for c in prev_df.columns if c.startswith("SCORE_")]
-        if score_cols:
-            row0 = prev_df.iloc[0]
-            st.session_state.prev_scores = {c.replace("SCORE_", ""): float(row0[c]) for c in score_cols if pd.notna(row0[c])}
-        else:
-            prev_responses = {col: int(prev_df.iloc[0][col]) for col in prev_df.columns if col in VAR2SUB}
-            st.session_state.prev_scores = compute_subscale_scores(prev_responses)
-        st.success("Loaded previous scores for comparison.")
-    except Exception as e:
-        st.warning(f"Could not parse uploaded CSV: {e}")
 
 page = st.session_state.page
 start = page * PAGE_SIZE
@@ -297,20 +352,14 @@ end = min(start + PAGE_SIZE, TOTAL_ITEMS)
 st.subheader(f"Survey — Items {start+1}–{end} of {TOTAL_ITEMS} (1–7)")
 st.caption(LIKERT7_LEGEND)
 
-# Render items one-by-one (no subscale headers)
+# Render items (dots only)
 for idx in range(start, end):
     var, text, _ = ITEMS[idx]
     current_val = st.session_state.responses.get(var)
-
-    if input_style.startswith("Dots"):
-        options = list(range(1, 8))
-        default_index = (int(current_val) - 1) if isinstance(current_val, (int, np.integer)) else 3
-        choice = st.radio(text, options=options, index=default_index, horizontal=True, key=f"radio_{var}")
-        st.session_state.responses[var] = int(choice)
-    else:
-        default_val = int(current_val) if isinstance(current_val, (int, np.integer)) else 4
-        val = st.slider(text, min_value=1, max_value=7, step=1, value=default_val, key=f"slider_{var}")
-        st.session_state.responses[var] = int(val)
+    options = list(range(1, 8))
+    default_index = (int(current_val) - 1) if isinstance(current_val, (int, np.integer)) else 3
+    choice = st.radio(text, options=options, index=default_index, horizontal=True, key=f"radio_{var}")
+    st.session_state.responses[var] = int(choice)
 
 # Navigation
 col_nav1, col_nav2, _ = st.columns([1, 1, 3])
@@ -332,7 +381,6 @@ if compute:
     timestamp_iso = datetime.utcnow().isoformat()
     responses: dict[str, int] = {v: st.session_state.responses.get(v, np.nan) for v, _, _ in ITEMS}
     subscale_scores = compute_subscale_scores(responses)
-    prev_scores = st.session_state.get("prev_scores", None)
 
     out_row = {
         "timestamp": timestamp_iso,
@@ -349,7 +397,7 @@ if compute:
     }
 
     st.subheader("Subscale Web Chart (1–7)")
-    fig = radar_plot(subscale_scores, prev_scores)
+    fig = radar_plot(subscale_scores)
 
     if PLOTLY_OK and isinstance(fig, go.Figure):
         st.plotly_chart(fig, use_container_width=True)
@@ -367,7 +415,7 @@ if compute:
         st.markdown("- **PRO** — Professional Responsibility")
         st.markdown("- **INTENT** — Behavioral Intentions")
 
-    # ===== Canvas-friendly report =====
+    # ===== Canvas-friendly, customized report =====
     st.subheader("Canvas Report (copy/paste)")
     report_text = make_canvas_report(
         timestamp_iso=timestamp_iso,
@@ -381,9 +429,8 @@ if compute:
         langs=langs,
         subscale_scores=subscale_scores,
         responses=responses,
-        prev_scores=prev_scores,
     )
-    st.text_area("Copy the text below and paste into your Canvas assignment submission:", value=report_text, height=420)
+    st.text_area("Copy the text below and paste into your Canvas assignment submission:", value=report_text, height=460)
     st.download_button("Download report (.txt)", data=report_text.encode("utf-8"), file_name=f"ai_ebm_{mode.lower()}_report.txt", mime="text/plain")
 
     # Export CSV + chart files
@@ -398,11 +445,11 @@ if compute:
 
     pdf_bytes, pdf_mime, png_bytes, png_mime = (export_chart(fig) if fig is not None else (None, None, None, None))
     if pdf_bytes is not None:
-        st.download_button("Download chart (PDF)", data=pdf_bytes, file_name="ai_ebm_chart.pdf", mime=pdf_mime)
+        st.download_button("Download chart (PDF)", data=pdf_bytes, file_name="ai_ebm_chart.pdf", mime="application/pdf")
     if png_bytes is not None:
-        st.download_button("Download chart (PNG)", data=png_bytes, file_name="ai_ebm_chart.png", mime=png_mime)
+        st.download_button("Download chart (PNG)", data=png_bytes, file_name="ai_ebm_chart.png", mime="image/png")
 
     if (pdf_bytes is None) and (png_bytes is None):
         st.caption("To enable chart downloads, install Plotly + Kaleido (preferred) or Matplotlib.")
 
-    st.success("Done. Your item-by-item responses were scored. Use the Canvas report below or the downloads above.")
+    st.success("Done. Your responses were scored and a customized Canvas report is ready below.")

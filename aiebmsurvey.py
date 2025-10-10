@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="AI-EBM Survey (Item-by-item Likert)", page_icon="🧭", layout="wide")
+st.set_page_config(page_title="Artificial Intelligence and Evidence-based Medicine: A Skills and Knowledge Survey", page_icon="🧭", layout="wide")
 
 # ---- Streamlit rerun compatibility (new: st.rerun / old: st.experimental_rerun) ----
 RERUN = getattr(st, "rerun", None) or getattr(st, "experimental_rerun", None)

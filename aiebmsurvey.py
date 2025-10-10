@@ -286,10 +286,10 @@ def make_canvas_report(
         lines.append("Growth Areas: " + ", ".join(growth))
     if not strengths and not growth:
         lines.append("Balanced profile without clear strengths or gaps identified.")
-    if highs:
-        lines.append("Top areas: " + ", ".join([f\"{FULL_NAMES[k]} ({v:.2f})\" for k, v in highs]))
+       if highs:
+        lines.append("Top areas: " + ", ".join([f"{FULL_NAMES[k]} ({v:.2f})" for k, v in highs]))
     if lows:
-        lines.append("Lowest areas: " + ", ".join([f\"{FULL_NAMES[k]} ({v:.2f})\" for k, v in lows]))
+        lines.append("Lowest areas: " + ", ".join([f"{FULL_NAMES[k]} ({v:.2f})" for k, v in lows]))
     lines.append("")
 
     # Action items tailored by band (with full names)

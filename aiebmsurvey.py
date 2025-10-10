@@ -1,8 +1,4 @@
 
-Double check the code below. Have it create include a customized output/report that can be pasted into an assignment page in Canvas
-
-
-
 import io
 
 import math

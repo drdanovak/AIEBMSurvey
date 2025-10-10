@@ -177,3 +177,232 @@ def make_canvas_report(
     role: str,
     ai_hours: str,
     ai_freq: str,
+    spec: str,
+    ai_tools: str,
+    langs: str,
+    subscale_scores: dict[str, float],
+    responses: dict[str, int],
+    prev_scores: dict[str, float] | None = None,
+) -> str:
+    """Generate a copy-ready text block for Canvas."""
+    # Header and demographics
+    lines = []
+    lines.append("AI–EBM Survey Report")
+    lines.append("====================")
+    lines.append(f"Timestamp (UTC): {timestamp_iso}")
+    lines.append(f"Mode: {mode}")
+    lines.append(f"Anonymous ID: {anon_id or '—'}")
+    lines.append(f"Role: {role or '—'}")
+    lines.append(f"AI Expertise: {ai_hours or '—'}")
+    lines.append(f"AI Use Frequency: {ai_freq or '—'}")
+    lines.append(f"Specialty: {spec or '—'}")
+    lines.append(f"AI Tools Used: {ai_tools or '—'}")
+    lines.append(f"Languages: {langs or '—'}")
+    lines.append("")
+
+    # Subscale scores
+    lines.append("Subscale Scores (1–7)")
+    lines.append("---------------------")
+    for s in SUBSCALES:
+        cur = subscale_scores.get(s, np.nan)
+        cur_str = "—" if pd.isna(cur) else f"{cur:.2f}"
+        if prev_scores is not None and s in prev_scores and not pd.isna(prev_scores[s]) and not pd.isna(cur):
+            delta = cur - float(prev_scores[s])
+            sign = "+" if delta > 0 else ""
+            lines.append(f"- {s}: {cur_str}  ({sign}{delta:.2f} vs. previous)")
+        else:
+            lines.append(f"- {s}: {cur_str}")
+    lines.append("")
+
+    # Item-by-item
+    lines.append("Item Responses")
+    lines.append("--------------")
+    for code, text, _ in ITEMS:
+        val = responses.get(code, np.nan)
+        val_str = "—" if pd.isna(val) else str(int(val))
+        lines.append(f"- {code}: {val_str} — {text}")
+    lines.append("")
+
+    # Footer
+    lines.append("Notes")
+    lines.append("-----")
+    lines.append("Scores are simple means per subscale. 1 = Strongly disagree … 7 = Strongly agree.")
+    return "\n".join(lines)
+
+
+# ==========================
+# UI
+# ==========================
+left, right = st.columns([1, 1])
+with left:
+    st.title("🧭 AI-EBM Survey (Item-by-item, 1–7)")
+    mode = st.radio("Survey mode", ["Pre", "Post"], horizontal=True)
+
+# Demographics first
+st.subheader("Demographics & Background")
+col1, col2, col3 = st.columns(3)
+with col1:
+    role = st.selectbox("What is your role?", ["", "MS1", "MS2", "MS3", "MS4", "Resident", "Fellow", "Faculty", "Other"], index=0)
+with col2:
+    ai_hours = st.selectbox("What is your current level of AI expertise?", ["", "None", "Low", "Medium", "High", "Expert"], index=0)
+with col3:
+    ai_freq = st.selectbox("How often do you use AI for clinical learning/teaching?", ["", "Never", "<Monthly", "Monthly", "Weekly", "Daily or almost daily"], index=0)
+
+colx, coly = st.columns(2)
+with colx:
+    spec = st.text_input("Intended/current specialty (optional)")
+    ai_tools = st.text_input("Which AI tools have you used recently? (optional)")
+with coly:
+    anon_id = st.text_input("Anonymous ID (optional)")
+    langs = st.text_input("Languages (optional)")
+
+st.divider()
+
+# Input style (keep both; default Dots)
+input_style = st.radio("Input style", ["Dots (1–7)", "Slider (1–7)"], horizontal=True, index=0)
+
+# Pagination (groups of 7)
+PAGE_SIZE = 7
+TOTAL_ITEMS = len(ITEMS)
+TOTAL_PAGES = math.ceil(TOTAL_ITEMS / PAGE_SIZE)
+
+if "page" not in st.session_state:
+    st.session_state.page = 0
+if "responses" not in st.session_state:
+    st.session_state.responses = {}
+if "prev_scores" not in st.session_state:
+    st.session_state.prev_scores = None
+
+# Compare upload (overlay vs. prior CSV) — put BEFORE compute so it's available for plotting/exports
+st.subheader("Optional: Compare with a previous attempt")
+up = st.file_uploader("Upload a prior results CSV downloaded from this app (pre or post)", type=["csv"])
+if up is not None:
+    try:
+        prev_df = pd.read_csv(up)
+        score_cols = [c for c in prev_df.columns if c.startswith("SCORE_")]
+        if score_cols:
+            row0 = prev_df.iloc[0]
+            st.session_state.prev_scores = {c.replace("SCORE_", ""): float(row0[c]) for c in score_cols if pd.notna(row0[c])}
+        else:
+            prev_responses = {col: int(prev_df.iloc[0][col]) for col in prev_df.columns if col in VAR2SUB}
+            st.session_state.prev_scores = compute_subscale_scores(prev_responses)
+        st.success("Loaded previous scores for comparison.")
+    except Exception as e:
+        st.warning(f"Could not parse uploaded CSV: {e}")
+
+page = st.session_state.page
+start = page * PAGE_SIZE
+end = min(start + PAGE_SIZE, TOTAL_ITEMS)
+
+st.subheader(f"Survey — Items {start+1}–{end} of {TOTAL_ITEMS} (1–7)")
+st.caption(LIKERT7_LEGEND)
+
+# Render items one-by-one (no subscale headers)
+for idx in range(start, end):
+    var, text, _ = ITEMS[idx]
+    current_val = st.session_state.responses.get(var)
+
+    if input_style.startswith("Dots"):
+        options = list(range(1, 8))
+        default_index = (int(current_val) - 1) if isinstance(current_val, (int, np.integer)) else 3
+        choice = st.radio(text, options=options, index=default_index, horizontal=True, key=f"radio_{var}")
+        st.session_state.responses[var] = int(choice)
+    else:
+        default_val = int(current_val) if isinstance(current_val, (int, np.integer)) else 4
+        val = st.slider(text, min_value=1, max_value=7, step=1, value=default_val, key=f"slider_{var}")
+        st.session_state.responses[var] = int(val)
+
+# Navigation
+col_nav1, col_nav2, _ = st.columns([1, 1, 3])
+with col_nav1:
+    if st.button("← Back", disabled=(page == 0)):
+        st.session_state.page = max(0, page - 1)
+        if RERUN:
+            RERUN()
+with col_nav2:
+    if st.button("Next →", disabled=(page >= TOTAL_PAGES - 1)):
+        st.session_state.page = min(TOTAL_PAGES - 1, page + 1)
+        if RERUN:
+            RERUN()
+
+# Compute
+compute = st.button("Calculate, Show Chart, & Build Report ⮕")
+
+if compute:
+    timestamp_iso = datetime.utcnow().isoformat()
+    responses: dict[str, int] = {v: st.session_state.responses.get(v, np.nan) for v, _, _ in ITEMS}
+    subscale_scores = compute_subscale_scores(responses)
+    prev_scores = st.session_state.get("prev_scores", None)
+
+    out_row = {
+        "timestamp": timestamp_iso,
+        "mode": mode,
+        "anon_id": anon_id,
+        "role": role,
+        "ai_hours": ai_hours,
+        "ai_freq": ai_freq,
+        "specialty": spec,
+        "ai_tools": ai_tools,
+        "languages": langs,
+        **responses,
+        **{f"SCORE_{k}": v for k, v in subscale_scores.items()},
+    }
+
+    st.subheader("Subscale Web Chart (1–7)")
+    fig = radar_plot(subscale_scores, prev_scores)
+
+    if PLOTLY_OK and isinstance(fig, go.Figure):
+        st.plotly_chart(fig, use_container_width=True)
+    elif MATPLOTLIB_OK and fig is not None:
+        st.pyplot(fig, use_container_width=True)
+    else:
+        st.warning("No chart backend installed. Install either `plotly` (recommended) or `matplotlib` to view the radar chart.")
+
+    with st.expander("Subscale key", expanded=False):
+        st.markdown("- **AILIT** — AI-EBM Literacy")
+        st.markdown("- **VERIF** — Verification & Provenance")
+        st.markdown("- **EQUITY** — Bias & Equity")
+        st.markdown("- **TRUST** — Calibration & Trust")
+        st.markdown("- **COMM** — Patient Communication")
+        st.markdown("- **PRO** — Professional Responsibility")
+        st.markdown("- **INTENT** — Behavioral Intentions")
+
+    # ===== Canvas-friendly report =====
+    st.subheader("Canvas Report (copy/paste)")
+    report_text = make_canvas_report(
+        timestamp_iso=timestamp_iso,
+        mode=mode,
+        anon_id=anon_id,
+        role=role,
+        ai_hours=ai_hours,
+        ai_freq=ai_freq,
+        spec=spec,
+        ai_tools=ai_tools,
+        langs=langs,
+        subscale_scores=subscale_scores,
+        responses=responses,
+        prev_scores=prev_scores,
+    )
+    st.text_area("Copy the text below and paste into your Canvas assignment submission:", value=report_text, height=420)
+    st.download_button("Download report (.txt)", data=report_text.encode("utf-8"), file_name=f"ai_ebm_{mode.lower()}_report.txt", mime="text/plain")
+
+    # Export CSV + chart files
+    st.subheader("Export Data & Chart")
+    out_df = pd.DataFrame([out_row])
+    st.download_button(
+        "Download results (CSV)",
+        data=out_df.to_csv(index=False).encode("utf-8"),
+        file_name=f"ai_ebm_{mode.lower()}_results.csv",
+        mime="text/csv",
+    )
+
+    pdf_bytes, pdf_mime, png_bytes, png_mime = (export_chart(fig) if fig is not None else (None, None, None, None))
+    if pdf_bytes is not None:
+        st.download_button("Download chart (PDF)", data=pdf_bytes, file_name="ai_ebm_chart.pdf", mime=pdf_mime)
+    if png_bytes is not None:
+        st.download_button("Download chart (PNG)", data=png_bytes, file_name="ai_ebm_chart.png", mime=png_mime)
+
+    if (pdf_bytes is None) and (png_bytes is None):
+        st.caption("To enable chart downloads, install Plotly + Kaleido (preferred) or Matplotlib.")
+
+    st.success("Done. Your item-by-item responses were scored. Use the Canvas report below or the downloads above.")

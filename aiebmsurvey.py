@@ -36,6 +36,16 @@ except Exception:
 # ==========================
 LIKERT7_LEGEND = "1 = Strongly disagree … 7 = Strongly agree"
 
+COL_LABELS = [
+    "Strongly disagree",
+    "Disagree",
+    "Somewhat disagree",
+    "Neither agree nor disagree",
+    "Somewhat agree",
+    "Agree",
+    "Strongly agree",
+]
+
 ITEMS = [
     # AILIT (6)
     ("AILIT_1", "I can explain how large language models are trained and why they sometimes hallucinate clinically plausible but false statements.", "AILIT"),
@@ -80,15 +90,6 @@ ITEMS = [
 ]
 
 SUBSCALES = ["AILIT", "VERIF", "EQUITY", "TRUST", "COMM", "PRO", "INTENT"]
-SUBSCALE_DESCRIPTIONS = {
-    "AILIT": "AI-EBM Literacy: LLM basics, hallucinations, dataset shift, RAG, citations.",
-    "VERIF": "Verification & Provenance: guidelines, primary studies, logging, cross-checking, provenance.",
-    "EQUITY": "Bias & Equity: wording effects, representativeness, accessibility, bias mitigation, ASR verification.",
-    "TRUST": "Calibration & Trust: confidence after verification, disagreeing with AI, communicating uncertainty.",
-    "COMM": "Patient Communication: transparency about AI, addressing AI-sourced info, readable handouts, privacy.",
-    "PRO": "Professional Responsibility: documenting AI use, faculty review, policies.",
-    "INTENT": "Behavioral Intentions: planned verification, bias checks, guideline validation, prompt improvements.",
-}
 VAR2SUB = {v: s for v, _, s in ITEMS}
 
 # ==========================
@@ -149,7 +150,6 @@ def export_chart(fig) -> tuple[bytes | None, str | None, bytes | None, str | Non
     png_bytes = None
     png_mime = None
 
-    # Plotly (with Kaleido) export
     if PLOTLY_OK and PLOTLY_PDF_OK and isinstance(fig, go.Figure):
         try:
             pdf_bytes = fig.to_image(format="pdf")
@@ -160,7 +160,6 @@ def export_chart(fig) -> tuple[bytes | None, str | None, bytes | None, str | Non
         except Exception:
             pass
 
-    # Matplotlib export (if fig is a Matplotlib Figure)
     if MATPLOTLIB_OK and hasattr(fig, "savefig"):
         try:
             buf_pdf = io.BytesIO()
@@ -228,20 +227,50 @@ end = min(start + PAGE_SIZE, TOTAL_ITEMS)
 st.subheader(f"Matrix Survey (1–7) — Items {start+1}–{end} of {TOTAL_ITEMS}")
 st.caption(LIKERT7_LEGEND)
 
-# Render current page items (no subscale titles shown)
+# ---------- Likert header row (for Dots view) ----------
+if input_style.startswith("Dots"):
+    hdr = st.columns([3, 1, 1, 1, 1, 1, 1, 1])
+    hdr[0].markdown(" ")
+    for i, lab in enumerate(COL_LABELS):
+        hdr[i + 1].markdown(f"<div style='text-align:center; font-weight:600; color:#666'>{lab}</div>", unsafe_allow_html=True)
+
+# ---------- Render current page items (no subscale titles) ----------
 for idx in range(start, end):
     var, text, _ = ITEMS[idx]
     current_val = st.session_state.responses.get(var)
+
     if input_style.startswith("Dots"):
-        # Dots (radio buttons) — default to midpoint if not set
-        options = list(range(1, 8))
-        default_index = (int(current_val) - 1) if isinstance(current_val, (int, np.integer)) else 3
-        choice = st.radio(text, options=options, index=default_index, key=f"radio_{var}", horizontal=True)
-        st.session_state.responses[var] = int(choice)
+        # Layout row: left text + one full-width radio with 7 unlabeled dots
+        row = st.columns([3, 7])
+        with row[0]:
+            st.markdown(f"<div style='padding:8px 0'>{text}</div>", unsafe_allow_html=True)
+
+        with row[1]:
+            options = list(range(1, 8))
+            default_index = (int(current_val) - 1) if isinstance(current_val, (int, np.integer)) else 3
+            # format_func hides per-dot labels; header handles wording
+            choice = st.radio(
+                label="",
+                options=options,
+                index=default_index,
+                key=f"radio_{var}",
+                horizontal=True,
+                label_visibility="collapsed",
+                format_func=lambda x: ""  # show plain dots
+            )
+            st.session_state.responses[var] = int(choice)
+        st.markdown("<hr style='border:0;border-top:1px solid #eee;margin:6px 0 4px 0'/>", unsafe_allow_html=True)
+
     else:
-        # Slider — default to midpoint if not set
-        default_val = int(current_val) if isinstance(current_val, (int, np.integer)) else 4
-        val = st.slider(text, min_value=1, max_value=7, step=1, value=default_val, key=f"slider_{var}")
+        # Slider mode: show 1–7 slider, defaulting to midpoint
+        val = st.slider(
+            text,
+            min_value=1,
+            max_value=7,
+            step=1,
+            value=int(current_val) if isinstance(current_val, (int, np.integer)) else 4,
+            key=f"slider_{var}",
+        )
         st.session_state.responses[var] = int(val)
 
 # Navigation buttons
@@ -303,10 +332,15 @@ if compute:
     else:
         st.warning("No chart backend installed. Install either `plotly` (recommended) or `matplotlib` to view the radar chart.")
 
-    # Subscale key / legend (each on its own line to avoid unterminated string issues)
+    # Key / legend
     with st.expander("Subscale key", expanded=False):
-        for k in SUBSCALES:
-            st.markdown(f"- **{k}** — {SUBSCALE_DESCRIPTIONS[k]}")
+        st.markdown("- **AILIT** — AI-EBM Literacy")
+        st.markdown("- **VERIF** — Verification & Provenance")
+        st.markdown("- **EQUITY** — Bias & Equity")
+        st.markdown("- **TRUST** — Calibration & Trust")
+        st.markdown("- **COMM** — Patient Communication")
+        st.markdown("- **PRO** — Professional Responsibility")
+        st.markdown("- **INTENT** — Behavioral Intentions")
 
     # Export
     st.subheader("Export")

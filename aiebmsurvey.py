@@ -69,6 +69,15 @@ ITEMS = [
 ]
 
 SUBSCALES = ["AILIT", "VERIF", "EQUITY", "TRUST", "COMM", "PRO", "INTENT"]
+SUBSCALE_DESCRIPTIONS = {
+    "AILIT": "AI‑EBM Literacy — understanding LLMs, hallucinations, dataset shift, RAG, and citations.",
+    "VERIF": "Verification & Provenance — guideline checks, primary studies, logging verification, cross‑checking, provenance.",
+    "EQUITY": "Bias & Equity — prompt wording effects, representativeness, accessibility, bias mitigation, ASR verification.",
+    "TRUST": "Calibration & Trust — appropriate confidence after verification, disagreeing with AI, communicating uncertainty.",
+    "COMM": "Patient Communication — transparency about AI use, addressing AI‑sourced info, creating readable handouts, privacy.",
+    "PRO": "Professional Responsibility — documenting AI use, faculty review, institutional policy awareness.",
+    "INTENT": "Behavioral Intentions — planned verification, bias checks, guideline validation, prompt improvements.",
+}
 VAR2SUB = {v: s for v, _, s in ITEMS}
 
 # ==========================
@@ -189,6 +198,12 @@ st.divider()
 st.subheader("Matrix Survey (1–7)")
 st.caption(LIKERT7_LEGEND)
 
+# Prefer a slider for matrix responses; fall back to numeric input if SliderColumn is unavailable
+try:
+    ResponseCol = st.column_config.SliderColumn("Response (1–7)", min_value=1, max_value=7, step=1)
+except Exception:
+    ResponseCol = st.column_config.NumberColumn("Response (1–7)", min_value=1, max_value=7, step=1)
+
 # Build matrix DataFrame
 matrix_df = pd.DataFrame({
     "Variable": [v for v, _, _ in ITEMS],
@@ -204,7 +219,7 @@ edited = st.data_editor(
     use_container_width=True,
     column_config={
         "Item": st.column_config.TextColumn("Item", disabled=True, width="large"),
-        "Response": st.column_config.SelectboxColumn("Response (1–7)", options=list(range(1, 8)), required=True),
+        "Response": ResponseCol", options=list(range(1, 8)), required=True),
     },
     hide_index=True,
 )
@@ -262,7 +277,12 @@ if submitted:
         st.warning("No chart backend installed. Install either `plotly` (recommended) or `matplotlib` to view the radar chart.")
 
     # Export
-    st.subheader("Export")
+    # Subscale legend/key
+with st.expander("Subscale key", expanded=False):
+    st.markdown("
+".join([f"- **{k}** — {v}" for k, v in SUBSCALE_DESCRIPTIONS.items()]))
+
+st.subheader("Export")
     out_df = pd.DataFrame([out_row])
     st.download_button(
         "Download results (CSV)", data=out_df.to_csv(index=False).encode("utf-8"), file_name=f"ai_ebm_{mode.lower()}_results.csv", mime="text/csv"

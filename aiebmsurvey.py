@@ -178,6 +178,54 @@ def export_chart(fig) -> tuple[bytes | None, str | None, bytes | None, str | Non
 
     return pdf_bytes, pdf_mime, png_bytes, png_mime
 
+
+# ---------------------------
+# Likert matrix (DOTS) helpers
+# ---------------------------
+MATRIX_COL_WEIGHTS = [3, 1, 1, 1, 1, 1, 1, 1]  # question text + 7 equal dot columns
+
+MATRIX_CSS = """
+<style>
+.likert-header { text-align:center; font-weight:600; color:#666; }
+.likert-q { padding:8px 0; }
+hr.likert { border:0; border-top:1px solid #eee; margin:6px 0 4px 0; }
+.likert-dot .stButton>button {
+  padding: 0.1rem 0.25rem;
+  min-width: 2rem; height: 2rem;
+  border-radius: 50%;
+  border: 1px solid #aaa;
+  background-color: #fff;
+  line-height: 1.6rem;
+  text-align: center;
+}
+.likert-dot .stButton>button:hover { border-color: #666; }
+</style>
+"""
+
+
+def render_likert_header():
+    cols = st.columns(MATRIX_COL_WEIGHTS)
+    cols[0].markdown("&nbsp;", unsafe_allow_html=True)
+    for i, lab in enumerate(COL_LABELS):
+        cols[i + 1].markdown(f"<div class='likert-header'>{lab}</div>", unsafe_allow_html=True)
+
+
+def render_likert_row(var: str, text: str):
+    # uses 8 columns: left text + 7 dot buttons; exactly matches header widths
+    cols = st.columns(MATRIX_COL_WEIGHTS)
+    cols[0].markdown(f"<div class='likert-q'>{text}</div>", unsafe_allow_html=True)
+    sel = st.session_state.responses.get(var)
+    for j in range(1, 8):
+        with cols[j]:
+            with st.container():  # scope class wrapper
+                st.markdown("<div class='likert-dot'>", unsafe_allow_html=True)
+                pressed = st.button("●" if sel == j else "○", key=f"d_{var}_{j}")
+                st.markdown("</div>", unsafe_allow_html=True)
+                if pressed:
+                    st.session_state.responses[var] = j
+    st.markdown("<hr class='likert'/>", unsafe_allow_html=True)
+
+
 # ==========================
 # UI
 # ==========================
@@ -227,42 +275,18 @@ end = min(start + PAGE_SIZE, TOTAL_ITEMS)
 st.subheader(f"Matrix Survey (1–7) — Items {start+1}–{end} of {TOTAL_ITEMS}")
 st.caption(LIKERT7_LEGEND)
 
-# ---------- Likert header row (for Dots view) ----------
+# ---------- Render current page ----------
 if input_style.startswith("Dots"):
-    hdr = st.columns([3, 1, 1, 1, 1, 1, 1, 1])
-    hdr[0].markdown(" ")
-    for i, lab in enumerate(COL_LABELS):
-        hdr[i + 1].markdown(f"<div style='text-align:center; font-weight:600; color:#666'>{lab}</div>", unsafe_allow_html=True)
-
-# ---------- Render current page items (no subscale titles) ----------
-for idx in range(start, end):
-    var, text, _ = ITEMS[idx]
-    current_val = st.session_state.responses.get(var)
-
-    if input_style.startswith("Dots"):
-        # Layout row: left text + one full-width radio with 7 unlabeled dots
-        row = st.columns([3, 7])
-        with row[0]:
-            st.markdown(f"<div style='padding:8px 0'>{text}</div>", unsafe_allow_html=True)
-
-        with row[1]:
-            options = list(range(1, 8))
-            default_index = (int(current_val) - 1) if isinstance(current_val, (int, np.integer)) else 3
-            # format_func hides per-dot labels; header handles wording
-            choice = st.radio(
-                label="",
-                options=options,
-                index=default_index,
-                key=f"radio_{var}",
-                horizontal=True,
-                label_visibility="collapsed",
-                format_func=lambda x: ""  # show plain dots
-            )
-            st.session_state.responses[var] = int(choice)
-        st.markdown("<hr style='border:0;border-top:1px solid #eee;margin:6px 0 4px 0'/>", unsafe_allow_html=True)
-
-    else:
-        # Slider mode: show 1–7 slider, defaulting to midpoint
+    st.markdown(MATRIX_CSS, unsafe_allow_html=True)
+    render_likert_header()
+    for idx in range(start, end):
+        var, text, _ = ITEMS[idx]
+        render_likert_row(var, text)
+else:
+    # Slider mode
+    for idx in range(start, end):
+        var, text, _ = ITEMS[idx]
+        current_val = st.session_state.responses.get(var)
         val = st.slider(
             text,
             min_value=1,
@@ -273,8 +297,8 @@ for idx in range(start, end):
         )
         st.session_state.responses[var] = int(val)
 
-# Navigation buttons
-col_nav1, col_nav2, col_nav3 = st.columns([1, 1, 2])
+# Navigation
+col_nav1, col_nav2, _ = st.columns([1, 1, 3])
 with col_nav1:
     if st.button("← Back", disabled=(page == 0)):
         st.session_state.page = max(0, page - 1)
@@ -301,7 +325,7 @@ if up is not None:
     except Exception as e:
         st.warning(f"Could not parse uploaded CSV: {e}")
 
-# Compute button
+# Compute
 compute = st.button("Calculate & Show Chart ⮕")
 
 if compute:
@@ -332,7 +356,6 @@ if compute:
     else:
         st.warning("No chart backend installed. Install either `plotly` (recommended) or `matplotlib` to view the radar chart.")
 
-    # Key / legend
     with st.expander("Subscale key", expanded=False):
         st.markdown("- **AILIT** — AI-EBM Literacy")
         st.markdown("- **VERIF** — Verification & Provenance")

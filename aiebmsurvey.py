@@ -320,7 +320,7 @@ def make_canvas_report(
 # ==========================
 left, right = st.columns([1, 1])
 with left:
-    st.title("🧭 AI-EBM Survey (Item-by-item, 1–7)")
+    st.title("🧭 Artificial Intelligence and Evidence-based Medicine: A Skills and Knowledge Survey")
     mode = st.radio("Survey mode", ["Pre", "Post"], horizontal=True)
 
 # Demographics first

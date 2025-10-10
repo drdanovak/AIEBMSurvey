@@ -79,6 +79,15 @@ ITEMS = [
 ]
 
 SUBSCALES = ["AILIT", "VERIF", "EQUITY", "TRUST", "COMM", "PRO", "INTENT"]
+FULL_NAMES = {
+    "AILIT":  "AI-EBM Literacy",
+    "VERIF":  "Verification & Provenance",
+    "EQUITY": "Bias & Equity",
+    "TRUST":  "Calibration & Trust",
+    "COMM":   "Patient Communication",
+    "PRO":    "Professional Responsibility",
+    "INTENT": "Behavioral Intentions",
+}
 VAR2SUB = {v: s for v, _, s in ITEMS}
 
 # ==========================
@@ -92,7 +101,7 @@ def compute_subscale_scores(responses: dict[str, int]) -> dict[str, float]:
     return out
 
 def radar_plot(scores_now: dict[str, float]):
-    cats = SUBSCALES
+    cats = SUBSCALES  # chart can stay abbreviated for compactness
     r_now = [scores_now.get(c, 0) if not pd.isna(scores_now.get(c, np.nan)) else 0 for c in cats]
     cats_closed = cats + [cats[0]]
     r_now_closed = r_now + [r_now[0]]
@@ -114,7 +123,7 @@ def radar_plot(scores_now: dict[str, float]):
         ax.set_rmax(7)
         ax.set_rticks([1, 2, 3, 4, 5, 6, 7])
         ax.set_thetagrids(np.degrees(angles), labels=cats)
-        ax.plot(angles_closed, r_now_closed, label="Current")
+        ax.plot(angles_closed, r_now_closed)
         ax.fill(angles_closed, r_now_closed, alpha=0.25)
         return fig
     else:
@@ -212,10 +221,11 @@ def make_custom_narrative(subscale_scores: dict[str, float]) -> tuple[list[str],
     for s in SUBSCALES:
         sc = subscale_scores.get(s, np.nan)
         b = band_of(sc)
+        pretty = FULL_NAMES[s]
         if b == "high":
-            strengths.append(f"{s} ({sc:.2f})")
+            strengths.append(f"{pretty} ({sc:.2f})")
         elif b == "low":
-            growth.append(f"{s} ({'—' if pd.isna(sc) else f'{sc:.2f}'})")
+            growth.append(f"{pretty} ({'—' if pd.isna(sc) else f'{sc:.2f}'})")
     return strengths, growth
 
 def topk(scores: dict[str, float], k=2, reverse=True):
@@ -226,7 +236,6 @@ def topk(scores: dict[str, float], k=2, reverse=True):
 def make_canvas_report(
     timestamp_iso: str,
     mode: str,
-    anon_id: str,
     role: str,
     ai_hours: str,
     ai_freq: str,
@@ -251,7 +260,6 @@ def make_canvas_report(
     lines.append("====================")
     lines.append(f"Timestamp (UTC): {timestamp_iso}")
     lines.append(f"Mode: {mode}")
-    lines.append(f"Anonymous ID: {anon_id or '—'}")
     lines.append(f"Role: {role or '—'}")
     lines.append(f"AI Expertise: {ai_hours or '—'}")
     lines.append(f"AI Use Frequency: {ai_freq or '—'}")
@@ -266,7 +274,7 @@ def make_canvas_report(
     for s in SUBSCALES:
         cur = subscale_scores.get(s, np.nan)
         cur_str = "—" if pd.isna(cur) else f"{cur:.2f}"
-        lines.append(f"- {s}: {cur_str}")
+        lines.append(f"- {FULL_NAMES[s]}: {cur_str}")
     lines.append("")
 
     # Targeted narrative summary
@@ -279,18 +287,18 @@ def make_canvas_report(
     if not strengths and not growth:
         lines.append("Balanced profile without clear strengths or gaps identified.")
     if highs:
-        lines.append("Top areas: " + ", ".join([f"{k} ({v:.2f})" for k, v in highs]))
+        lines.append("Top areas: " + ", ".join([f\"{FULL_NAMES[k]} ({v:.2f})\" for k, v in highs]))
     if lows:
-        lines.append("Lowest areas: " + ", ".join([f"{k} ({v:.2f})" for k, v in lows]))
+        lines.append("Lowest areas: " + ", ".join([f\"{FULL_NAMES[k]} ({v:.2f})\" for k, v in lows]))
     lines.append("")
 
-    # Action items tailored by band
+    # Action items tailored by band (with full names)
     lines.append("Action Plan (next 1–2 weeks)")
     lines.append("----------------------------")
     for s in SUBSCALES:
         sc = subscale_scores.get(s, np.nan)
         b = band_of(sc)
-        lines.append(f"- {s}: {ACTIONS[s][b]}")
+        lines.append(f"- {FULL_NAMES[s]}: {ACTIONS[s][b]}")
     lines.append("")
 
     # Item-by-item list
@@ -330,12 +338,11 @@ with colx:
     spec = st.text_input("Intended/current specialty (optional)")
     ai_tools = st.text_input("Which AI tools have you used recently? (optional)")
 with coly:
-    anon_id = st.text_input("Anonymous ID (optional)")
     langs = st.text_input("Languages (optional)")
 
 st.divider()
 
-# ====== Dots-only input (remove slider option entirely) ======
+# ====== Dots-only input ======
 PAGE_SIZE = 7
 TOTAL_ITEMS = len(ITEMS)
 TOTAL_PAGES = math.ceil(TOTAL_ITEMS / PAGE_SIZE)
@@ -385,7 +392,6 @@ if compute:
     out_row = {
         "timestamp": timestamp_iso,
         "mode": mode,
-        "anon_id": anon_id,
         "role": role,
         "ai_hours": ai_hours,
         "ai_freq": ai_freq,
@@ -407,20 +413,19 @@ if compute:
         st.warning("No chart backend installed. Install either `plotly` (recommended) or `matplotlib` to view the radar chart.")
 
     with st.expander("Subscale key", expanded=False):
-        st.markdown("- **AILIT** — AI-EBM Literacy")
-        st.markdown("- **VERIF** — Verification & Provenance")
-        st.markdown("- **EQUITY** — Bias & Equity")
-        st.markdown("- **TRUST** — Calibration & Trust")
-        st.markdown("- **COMM** — Patient Communication")
-        st.markdown("- **PRO** — Professional Responsibility")
-        st.markdown("- **INTENT** — Behavioral Intentions")
+        st.markdown("- **AI-EBM Literacy**")
+        st.markdown("- **Verification & Provenance**")
+        st.markdown("- **Bias & Equity**")
+        st.markdown("- **Calibration & Trust**")
+        st.markdown("- **Patient Communication**")
+        st.markdown("- **Professional Responsibility**")
+        st.markdown("- **Behavioral Intentions**")
 
-    # ===== Canvas-friendly, customized report =====
+    # ===== Canvas-friendly, full-name report =====
     st.subheader("Canvas Report (copy/paste)")
     report_text = make_canvas_report(
         timestamp_iso=timestamp_iso,
         mode=mode,
-        anon_id=anon_id,
         role=role,
         ai_hours=ai_hours,
         ai_freq=ai_freq,

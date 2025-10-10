@@ -1,16 +1,18 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
 import io
 from datetime import datetime
 
-st.set_page_config(page_title="AI‑EBM Survey (Matrix)", page_icon="🧭", layout="wide")
+import numpy as np
+import pandas as pd
+import streamlit as st
 
-# ---- Optional plotting backends ----
+st.set_page_config(page_title="AI-EBM Survey (Matrix)", page_icon="🧭", layout="wide")
+
+# ---- Optional plotting backends (Plotly preferred; Matplotlib fallback) ----
 PLOTLY_OK = False
 PLOTLY_PDF_OK = False
 try:
     import plotly.graph_objects as go  # type: ignore
+
     PLOTLY_OK = True
     try:
         import kaleido  # type: ignore  # enables fig.to_image for PDF/PNG
@@ -23,6 +25,7 @@ except Exception:
 MATPLOTLIB_OK = False
 try:
     import matplotlib.pyplot as plt  # type: ignore
+
     MATPLOTLIB_OK = True
 except Exception:
     plt = None  # type: ignore
@@ -30,51 +33,57 @@ except Exception:
 # ==========================
 # Instrument Configuration
 # ==========================
-LIKERT7_LEGEND = "1=Strongly disagree … 7=Strongly agree"
+LIKERT7_LEGEND = "1 = Strongly disagree … 7 = Strongly agree"
 
 ITEMS = [
+    # AILIT
     ("AILIT_1", "I can explain how large language models are trained and why they sometimes hallucinate clinically plausible but false statements.", "AILIT"),
     ("AILIT_2", "I can distinguish between generative AI output and evidence synthesized from primary sources.", "AILIT"),
     ("AILIT_3", "I can describe dataset shift and why models may not generalize to my patient population.", "AILIT"),
-    ("AILIT_4", "I can explain retrieval‑augmented generation (RAG) and how it affects source attribution and traceability.", "AILIT"),
-    ("AILIT_5", "I can identify whether an AI‑generated answer includes citations that link to actual primary sources.", "AILIT"),
-    ("AILIT_6", "I can name at least two high‑risk failure modes for clinical AI (e.g., hallucination, brittleness to wording, biased recommendations).", "AILIT"),
+    ("AILIT_4", "I can explain retrieval-augmented generation (RAG) and how it affects source attribution and traceability.", "AILIT"),
+    ("AILIT_5", "I can identify whether an AI-generated answer includes citations that link to actual primary sources.", "AILIT"),
+    ("AILIT_6", "I can name at least two high-risk failure modes for clinical AI (e.g., hallucination, brittleness to wording, biased recommendations).", "AILIT"),
+    # VERIF
     ("VERIF_1", "When AI suggests a clinical claim, I verify it against professional guidelines before acting on it.", "VERIF"),
     ("VERIF_2", "I attempt to locate and read at least the abstract of primary studies referenced by AI outputs.", "VERIF"),
     ("VERIF_3", "I log my verification steps (sources checked, dates, guideline versions) when using AI for education or patient care.", "VERIF"),
-    ("VERIF_4", "I cross‑check dosing and contraindications with an independent drug‑information source, even if AI provides them.", "VERIF"),
-    ("VERIF_5", "For high‑stakes questions, I compare outputs across at least two AI tools or search engines.", "VERIF"),
+    ("VERIF_4", "I cross-check dosing and contraindications with an independent drug-information source, even if AI provides them.", "VERIF"),
+    ("VERIF_5", "For high-stakes questions, I compare outputs across at least two AI tools or search engines.", "VERIF"),
     ("VERIF_6", "I look for model or content provenance (e.g., training disclosures, last update, source links) before relying on AI.", "VERIF"),
-    ("EQUITY_1", "I actively consider how demographic or non‑clinical wording in prompts could change AI recommendations.", "EQUITY"),
+    # EQUITY
+    ("EQUITY_1", "I actively consider how demographic or non-clinical wording in prompts could change AI recommendations.", "EQUITY"),
     ("EQUITY_2", "I check whether evidence cited by AI represents diverse populations relevant to my local patient community.", "EQUITY"),
     ("EQUITY_3", "When generating patient materials with AI, I assess language access, readability, and cultural appropriateness.", "EQUITY"),
-    ("EQUITY_4", "I can describe at least one strategy to mitigate algorithmic bias (e.g., diverse datasets, auditing, post‑deployment monitoring).", "EQUITY"),
-    ("EQUITY_5", "If using speech‑to‑text in clinical workflows, I account for the possibility of fabricated text and verify against audio or notes.", "EQUITY"),
+    ("EQUITY_4", "I can describe at least one strategy to mitigate algorithmic bias (e.g., diverse datasets, auditing, post-deployment monitoring).", "EQUITY"),
+    ("EQUITY_5", "If using speech-to-text in clinical workflows, I account for the possibility of fabricated text and verify against audio or notes.", "EQUITY"),
     ("EQUITY_6", "I seek to avoid amplified disparities when using AI for triage, education, or documentation.", "EQUITY"),
-    ("TRUST_1", "After verification, I am appropriately confident using AI‑assisted synthesis to inform clinical teaching or decisions.", "TRUST"),
+    # TRUST
+    ("TRUST_1", "After verification, I am appropriately confident using AI-assisted synthesis to inform clinical teaching or decisions.", "TRUST"),
     ("TRUST_2", "I am comfortable disagreeing with AI when it conflicts with guidelines or the patient’s context.", "TRUST"),
     ("TRUST_3", "I can articulate uncertainty to patients when sources (including AI) disagree.", "TRUST"),
     ("TRUST_4", "When time allows, I prioritize checking primary sources rather than relying on AI by default for quick answers.", "TRUST"),
+    # COMM
     ("COMM_1", "I can clearly explain to a patient how I used AI as a tool in their care.", "COMM"),
-    ("COMM_2", "I can diplomatically address AI‑produced information a patient brings to a visit.", "COMM"),
-    ("COMM_3", "I can co‑create a verified patient‑education handout (accurate content, appropriate reading level) with AI.", "COMM"),
-    ("COMM_4", "I can discuss privacy and data‑sharing implications of using consumer AI apps with patients.", "COMM"),
+    ("COMM_2", "I can diplomatically address AI-produced information a patient brings to a visit.", "COMM"),
+    ("COMM_3", "I can co-create a verified patient-education handout (accurate content, appropriate reading level) with AI.", "COMM"),
+    ("COMM_4", "I can discuss privacy and data-sharing implications of using consumer AI apps with patients.", "COMM"),
+    # PRO
     ("PRO_1", "I document AI use and verification steps in a way that a preceptor/attending can audit.", "PRO"),
-    ("PRO_2", "I obtain faculty review before sharing AI‑generated materials with patients.", "PRO"),
+    ("PRO_2", "I obtain faculty review before sharing AI-generated materials with patients.", "PRO"),
     ("PRO_3", "I understand my institution’s policies on AI use in education and patient care.", "PRO"),
-    ("INTENT_1", "In the next month, I intend to log provenance (sources and dates) for any AI‑assisted EBM product I create.", "INTENT"),
-    ("INTENT_2", "I intend to run a bias check (e.g., demographic representativeness) on AI‑summarized evidence I plan to use.", "INTENT"),
+    # INTENT
+    ("INTENT_1", "In the next month, I intend to log provenance (sources and dates) for any AI-assisted EBM product I create.", "INTENT"),
+    ("INTENT_2", "I intend to run a bias check (e.g., demographic representativeness) on AI-summarized evidence I plan to use.", "INTENT"),
     ("INTENT_3", "I intend to validate AI recommendations against at least one clinical guideline source.", "INTENT"),
     ("INTENT_4", "I intend to improve my prompts to elicit sources, uncertainty, and limitations from AI systems.", "INTENT"),
 ]
-
 SUBSCALES = ["AILIT", "VERIF", "EQUITY", "TRUST", "COMM", "PRO", "INTENT"]
 SUBSCALE_DESCRIPTIONS = {
-    "AILIT": "AI‑EBM Literacy — understanding LLMs, hallucinations, dataset shift, RAG, and citations.",
-    "VERIF": "Verification & Provenance — guideline checks, primary studies, logging verification, cross‑checking, provenance.",
+    "AILIT": "AI-EBM Literacy — understanding LLMs, hallucinations, dataset shift, RAG, and citations.",
+    "VERIF": "Verification & Provenance — guideline checks, primary studies, logging verification, cross-checking, provenance.",
     "EQUITY": "Bias & Equity — prompt wording effects, representativeness, accessibility, bias mitigation, ASR verification.",
     "TRUST": "Calibration & Trust — appropriate confidence after verification, disagreeing with AI, communicating uncertainty.",
-    "COMM": "Patient Communication — transparency about AI use, addressing AI‑sourced info, creating readable handouts, privacy.",
+    "COMM": "Patient Communication — transparency about AI use, addressing AI-sourced info, creating readable handouts, privacy.",
     "PRO": "Professional Responsibility — documenting AI use, faculty review, institutional policy awareness.",
     "INTENT": "Behavioral Intentions — planned verification, bias checks, guideline validation, prompt improvements.",
 }
@@ -83,7 +92,6 @@ VAR2SUB = {v: s for v, _, s in ITEMS}
 # ==========================
 # Helpers
 # ==========================
-
 def compute_subscale_scores(responses: dict[str, int]) -> dict[str, float]:
     out: dict[str, float] = {}
     for s in SUBSCALES:
@@ -139,6 +147,7 @@ def export_chart(fig) -> tuple[bytes | None, str | None, bytes | None, str | Non
     png_bytes = None
     png_mime = None
 
+    # Plotly (with Kaleido) export
     if PLOTLY_OK and PLOTLY_PDF_OK and isinstance(fig, go.Figure):
         try:
             pdf_bytes = fig.to_image(format="pdf")
@@ -149,6 +158,7 @@ def export_chart(fig) -> tuple[bytes | None, str | None, bytes | None, str | Non
         except Exception:
             pass
 
+    # Matplotlib export (if fig is a Matplotlib Figure)
     if MATPLOTLIB_OK and hasattr(fig, "savefig"):
         try:
             buf_pdf = io.BytesIO()
@@ -172,13 +182,13 @@ def export_chart(fig) -> tuple[bytes | None, str | None, bytes | None, str | Non
 # ==========================
 left, right = st.columns([1, 1])
 with left:
-    st.title("🧭 AI‑EBM Survey (Matrix, 1–7)")
+    st.title("🧭 AI-EBM Survey (Matrix, 1–7)")
     st.caption("Prompt, But Verify — matrix responses, subscale scoring, overlay comparison")
     mode = st.radio("Survey mode", ["Pre", "Post"], horizontal=True)
     anon_id = st.text_input("Anonymous ID (recommended for pairing pre/post)")
 
 with right:
-    st.info("Demographics are collected first; then complete the one‑page matrix. Upload a prior CSV to compare.")
+    st.info("Demographics are collected first; then complete the one-page matrix. Upload a prior CSV to compare.")
 
 # Demographics (front)
 st.subheader("Demographics & Background")
@@ -219,7 +229,7 @@ edited = st.data_editor(
     use_container_width=True,
     column_config={
         "Item": st.column_config.TextColumn("Item", disabled=True, width="large"),
-        "Response": ResponseCol", options=list(range(1, 8)), required=True),
+        "Response": ResponseCol,  # <-- slider (1–7) or numeric fallback
     },
     hide_index=True,
 )
@@ -276,16 +286,19 @@ if submitted:
     else:
         st.warning("No chart backend installed. Install either `plotly` (recommended) or `matplotlib` to view the radar chart.")
 
-    # Export
-    # Subscale legend/key
-with st.expander("Subscale key", expanded=False):
-    st.markdown("
-".join([f"- **{k}** — {v}" for k, v in SUBSCALE_DESCRIPTIONS.items()]))
+    # Subscale legend/key (expandable)
+    with st.expander("Subscale key", expanded=False):
+        lines = [f"- **{k}** — {v}" for k, v in SUBSCALE_DESCRIPTIONS.items()]
+        st.markdown("\n".join(lines))
 
-st.subheader("Export")
+    # Export
+    st.subheader("Export")
     out_df = pd.DataFrame([out_row])
     st.download_button(
-        "Download results (CSV)", data=out_df.to_csv(index=False).encode("utf-8"), file_name=f"ai_ebm_{mode.lower()}_results.csv", mime="text/csv"
+        "Download results (CSV)",
+        data=out_df.to_csv(index=False).encode("utf-8"),
+        file_name=f"ai_ebm_{mode.lower()}_results.csv",
+        mime="text/csv",
     )
 
     pdf_bytes, pdf_mime, png_bytes, png_mime = export_chart(fig) if fig is not None else (None, None, None, None)

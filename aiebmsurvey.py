@@ -192,9 +192,6 @@ ai_tools = st.text_input("Which AI tools have you used recently? (optional)")
 
 st.divider()
 
-# Input style (keep both; default Dots)
-input_style = st.radio("Input style", ["Dots (1–7)"], horizontal=True, index=0)
-
 # Pagination (groups of 7)
 PAGE_SIZE = 7
 TOTAL_ITEMS = len(ITEMS)

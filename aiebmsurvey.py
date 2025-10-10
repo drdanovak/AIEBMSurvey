@@ -8,6 +8,9 @@ import streamlit as st
 
 st.set_page_config(page_title="AI-EBM Survey (Item-by-item Likert)", page_icon="🧭", layout="wide")
 
+# ---- Streamlit rerun compatibility (new: st.rerun / old: st.experimental_rerun) ----
+RERUN = getattr(st, "rerun", None) or getattr(st, "experimental_rerun", None)
+
 # ---- Optional plotting backends (Plotly preferred; Matplotlib fallback) ----
 PLOTLY_OK = False
 PLOTLY_PDF_OK = False
@@ -197,7 +200,7 @@ langs = st.text_input("Languages you are comfortable using with patients (option
 
 st.divider()
 
-# Input style: Dots or Slider
+# Input style (keep both; default Dots)
 input_style = st.radio("Input style", ["Dots (1–7)", "Slider (1–7)"], horizontal=True, index=0)
 
 # Pagination (groups of 5)
@@ -237,11 +240,13 @@ col_nav1, col_nav2, _ = st.columns([1, 1, 3])
 with col_nav1:
     if st.button("← Back", disabled=(page == 0)):
         st.session_state.page = max(0, page - 1)
-        st.experimental_rerun()
+        if RERUN:
+            RERUN()
 with col_nav2:
     if st.button("Next →", disabled=(page >= TOTAL_PAGES - 1)):
         st.session_state.page = min(TOTAL_PAGES - 1, page + 1)
-        st.experimental_rerun()
+        if RERUN:
+            RERUN()
 
 # Compare upload (overlay vs. prior CSV)
 st.subheader("Optional: Compare with a previous attempt")

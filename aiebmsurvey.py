@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="AI-EBM Survey (Matrix)", page_icon="🧭", layout="wide")
+st.set_page_config(page_title="AI-EBM Survey (Item-by-item Likert)", page_icon="🧭", layout="wide")
 
 # ---- Optional plotting backends (Plotly preferred; Matplotlib fallback) ----
 PLOTLY_OK = False
@@ -35,16 +35,6 @@ except Exception:
 # Instrument Configuration
 # ==========================
 LIKERT7_LEGEND = "1 = Strongly disagree … 7 = Strongly agree"
-
-COL_LABELS = [
-    "Strongly disagree",
-    "Disagree",
-    "Somewhat disagree",
-    "Neither agree nor disagree",
-    "Somewhat agree",
-    "Agree",
-    "Strongly agree",
-]
 
 ITEMS = [
     # AILIT (6)
@@ -144,7 +134,7 @@ def radar_plot(scores_now: dict[str, float], scores_prev: dict[str, float] | Non
 
 
 def export_chart(fig) -> tuple[bytes | None, str | None, bytes | None, str | None]:
-    """Return (pdf_bytes, pdf_mime, png_bytes, png_mime). Falls back as available."""
+    """Return (pdf_bytes, pdf_mime, png_bytes, png_mime)."""
     pdf_bytes = None
     pdf_mime = None
     png_bytes = None
@@ -178,68 +168,20 @@ def export_chart(fig) -> tuple[bytes | None, str | None, bytes | None, str | Non
 
     return pdf_bytes, pdf_mime, png_bytes, png_mime
 
-
-# ---------------------------
-# Likert matrix (DOTS) helpers
-# ---------------------------
-MATRIX_COL_WEIGHTS = [3, 1, 1, 1, 1, 1, 1, 1]  # question text + 7 equal dot columns
-
-MATRIX_CSS = """
-<style>
-.likert-header { text-align:center; font-weight:600; color:#666; }
-.likert-q { padding:8px 0; }
-hr.likert { border:0; border-top:1px solid #eee; margin:6px 0 4px 0; }
-.likert-dot .stButton>button {
-  padding: 0.1rem 0.25rem;
-  min-width: 2rem; height: 2rem;
-  border-radius: 50%;
-  border: 1px solid #aaa;
-  background-color: #fff;
-  line-height: 1.6rem;
-  text-align: center;
-}
-.likert-dot .stButton>button:hover { border-color: #666; }
-</style>
-"""
-
-
-def render_likert_header():
-    cols = st.columns(MATRIX_COL_WEIGHTS)
-    cols[0].markdown("&nbsp;", unsafe_allow_html=True)
-    for i, lab in enumerate(COL_LABELS):
-        cols[i + 1].markdown(f"<div class='likert-header'>{lab}</div>", unsafe_allow_html=True)
-
-
-def render_likert_row(var: str, text: str):
-    # uses 8 columns: left text + 7 dot buttons; exactly matches header widths
-    cols = st.columns(MATRIX_COL_WEIGHTS)
-    cols[0].markdown(f"<div class='likert-q'>{text}</div>", unsafe_allow_html=True)
-    sel = st.session_state.responses.get(var)
-    for j in range(1, 8):
-        with cols[j]:
-            with st.container():  # scope class wrapper
-                st.markdown("<div class='likert-dot'>", unsafe_allow_html=True)
-                pressed = st.button("●" if sel == j else "○", key=f"d_{var}_{j}")
-                st.markdown("</div>", unsafe_allow_html=True)
-                if pressed:
-                    st.session_state.responses[var] = j
-    st.markdown("<hr class='likert'/>", unsafe_allow_html=True)
-
-
 # ==========================
 # UI
 # ==========================
 left, right = st.columns([1, 1])
 with left:
-    st.title("🧭 AI-EBM Survey (Matrix, 1–7)")
-    st.caption("Prompt, But Verify — matrix responses, subscale scoring, overlay comparison")
+    st.title("🧭 AI-EBM Survey (Item-by-item, 1–7)")
+    st.caption("Prompt, But Verify — subscale scoring, overlay comparison")
     mode = st.radio("Survey mode", ["Pre", "Post"], horizontal=True)
     anon_id = st.text_input("Anonymous ID (recommended for pairing pre/post)")
 
 with right:
-    st.info("Demographics are collected first; then complete the paged 1–7 matrix. Upload a prior CSV to compare.")
+    st.info("Demographics are collected first; then answer items in pages of 5. Upload a prior CSV to compare.")
 
-# Demographics (front)
+# Demographics first
 st.subheader("Demographics & Background")
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -255,10 +197,10 @@ langs = st.text_input("Languages you are comfortable using with patients (option
 
 st.divider()
 
-# -------- Input style toggle (dots vs sliders) --------
+# Input style: Dots or Slider
 input_style = st.radio("Input style", ["Dots (1–7)", "Slider (1–7)"], horizontal=True, index=0)
 
-# -------- Pagination setup (groups of 5) --------
+# Pagination (groups of 5)
 PAGE_SIZE = 5
 TOTAL_ITEMS = len(ITEMS)
 TOTAL_PAGES = math.ceil(TOTAL_ITEMS / PAGE_SIZE)
@@ -272,29 +214,22 @@ page = st.session_state.page
 start = page * PAGE_SIZE
 end = min(start + PAGE_SIZE, TOTAL_ITEMS)
 
-st.subheader(f"Matrix Survey (1–7) — Items {start+1}–{end} of {TOTAL_ITEMS}")
+st.subheader(f"Survey — Items {start+1}–{end} of {TOTAL_ITEMS} (1–7)")
 st.caption(LIKERT7_LEGEND)
 
-# ---------- Render current page ----------
-if input_style.startswith("Dots"):
-    st.markdown(MATRIX_CSS, unsafe_allow_html=True)
-    render_likert_header()
-    for idx in range(start, end):
-        var, text, _ = ITEMS[idx]
-        render_likert_row(var, text)
-else:
-    # Slider mode
-    for idx in range(start, end):
-        var, text, _ = ITEMS[idx]
-        current_val = st.session_state.responses.get(var)
-        val = st.slider(
-            text,
-            min_value=1,
-            max_value=7,
-            step=1,
-            value=int(current_val) if isinstance(current_val, (int, np.integer)) else 4,
-            key=f"slider_{var}",
-        )
+# Render items one-by-one (no subscale headers)
+for idx in range(start, end):
+    var, text, _ = ITEMS[idx]
+    current_val = st.session_state.responses.get(var)
+
+    if input_style.startswith("Dots"):
+        options = list(range(1, 8))
+        default_index = (int(current_val) - 1) if isinstance(current_val, (int, np.integer)) else 3
+        choice = st.radio(text, options=options, index=default_index, horizontal=True, key=f"radio_{var}")
+        st.session_state.responses[var] = int(choice)
+    else:
+        default_val = int(current_val) if isinstance(current_val, (int, np.integer)) else 4
+        val = st.slider(text, min_value=1, max_value=7, step=1, value=default_val, key=f"slider_{var}")
         st.session_state.responses[var] = int(val)
 
 # Navigation
@@ -384,4 +319,4 @@ if compute:
     if (pdf_bytes is None) and (png_bytes is None):
         st.caption("To enable chart downloads, install Plotly + Kaleido (preferred) or Matplotlib.")
 
-    st.success("Done. Your matrix responses were scored. Use the downloads above to save data and the chart.")
+    st.success("Done. Your item-by-item responses were scored. Use the downloads above to save data and the chart.")

@@ -1,7 +1,15 @@
 import streamlit as st
-import plotly.graph_objects as go
 import pandas as pd
 from datetime import datetime
+
+# Optional plotting backends (Plotly preferred, fall back to Matplotlib if unavailable)
+PLOTLY_OK = False
+try:
+    import plotly.graph_objects as go  # type: ignore
+    PLOTLY_OK = True
+except Exception:
+    go = None  # type: ignore
+    import matplotlib.pyplot as plt  # type: ignore
 
 st.set_page_config(page_title="AI‑EBM Pre/Post Survey", page_icon="🧭", layout="wide")
 
@@ -57,21 +65,35 @@ def average(values: list[int | None]) -> float | None:
 def spider_chart(scores: dict[str, float | None]):
     cats = list(scores.keys())
     vals = [scores[c] if scores[c] is not None else 0 for c in cats]
+
     # close the loop for radar
-    cats_closed = cats + [cats[0]]
-    vals_closed = vals + [vals[0]]
-    fig = go.Figure(
-        data=go.Scatterpolar(r=vals_closed, theta=cats_closed, fill="toself")
-    )
-    fig.update_layout(
-        polar=dict(
-            radialaxis=dict(visible=True, range=[0, 5], tickmode="linear", dtick=1),
-        ),
-        showlegend=False,
-        margin=dict(l=20, r=20, t=20, b=20),
-        height=520,
-    )
-    return fig
+    cats_closed = cats + [cats[0]] if cats else cats
+    vals_closed = vals + [vals[0]] if vals else vals
+
+    if PLOTLY_OK and go is not None:
+        fig = go.Figure(data=go.Scatterpolar(r=vals_closed, theta=cats_closed, fill="toself"))
+        fig.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, 5], tickmode="linear", dtick=1)),
+            showlegend=False,
+            margin=dict(l=20, r=20, t=20, b=20),
+            height=520,
+        )
+        return fig
+    else:
+        # Matplotlib fallback
+        import numpy as np
+        fig, ax = plt.subplots(subplot_kw={"projection": "polar"})
+        if cats:
+            angles = np.linspace(0, 2 * np.pi, len(cats), endpoint=False).tolist()
+            angles_closed = angles + [angles[0]]
+            vals_closed = vals + [vals[0]]
+            ax.plot(angles_closed, vals_closed)
+            ax.fill(angles_closed, vals_closed, alpha=0.25)
+            ax.set_thetagrids(np.degrees(angles), labels=cats)
+        ax.set_rmax(5)
+        ax.set_rticks([1, 2, 3, 4, 5])
+        ax.grid(True)
+        return fig
 
 
 # -----------------------------
@@ -335,7 +357,10 @@ if submitted:
     # Radar chart
     st.subheader("Spider Chart of Subscales")
     fig = spider_chart(subscale_scores)
-    st.plotly_chart(fig, use_container_width=True)
+    if PLOTLY_OK and go is not None:
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.pyplot(fig, use_container_width=True)
 
     # Knowledge score display
     st.subheader("Knowledge & Performance Score")

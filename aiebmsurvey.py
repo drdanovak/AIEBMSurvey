@@ -40,13 +40,11 @@ except Exception:
 LIKERT7_LEGEND = "1 = Strongly disagree … 7 = Strongly agree"
 
 ITEMS = [
-    # AILIT (6)
+    # AILIT (4)
     ("AILIT_1", "I can explain how large language models are trained and why they sometimes hallucinate clinically plausible but false statements.", "AILIT"),
     ("AILIT_2", "I can distinguish between generative AI output and evidence synthesized from primary sources.", "AILIT"),
-    ("AILIT_3", "I can describe dataset shift and why models may not generalize to my patient population.", "AILIT"),
-    ("AILIT_4", "I can explain retrieval-augmented generation (RAG) and how it affects source attribution and traceability.", "AILIT"),
-    ("AILIT_5", "I can identify whether an AI-generated answer includes citations that link to actual primary sources.", "AILIT"),
-    ("AILIT_6", "I can name at least two high-risk failure modes for clinical AI (e.g., hallucination, brittleness to wording, biased recommendations).", "AILIT"),
+    ("AILIT_3", "I can identify whether an AI-generated answer includes citations that link to actual primary sources.", "AILIT"),
+    ("AILIT_4", "I can name at least two reasons for failure for clinical AI (e.g., hallucination, brittleness to wording, biased recommendations).", "AILIT"),
     # VERIF (6)
     ("VERIF_1", "When AI suggests a clinical claim, I verify it against professional guidelines before acting on it.", "VERIF"),
     ("VERIF_2", "I attempt to locate and read at least the abstract of primary studies referenced by AI outputs.", "VERIF"),
@@ -177,12 +175,7 @@ def export_chart(fig) -> tuple[bytes | None, str | None, bytes | None, str | Non
 left, right = st.columns([1, 1])
 with left:
     st.title("🧭 AI-EBM Survey (Item-by-item, 1–7)")
-    st.caption("Prompt, But Verify — subscale scoring, overlay comparison")
     mode = st.radio("Survey mode", ["Pre", "Post"], horizontal=True)
-    anon_id = st.text_input("Anonymous ID (recommended for pairing pre/post)")
-
-with right:
-    st.info("Demographics are collected first; then answer items in pages of 5. Upload a prior CSV to compare.")
 
 # Demographics first
 st.subheader("Demographics & Background")
@@ -190,21 +183,20 @@ col1, col2, col3 = st.columns(3)
 with col1:
     role = st.selectbox("What is your role?", ["", "MS1", "MS2", "MS3", "MS4", "Resident", "Fellow", "Faculty", "Other"], index=0)
 with col2:
-    ai_hours = st.selectbox("Prior AI/ML training hours", ["", "None", "<5 hours", "5–20 hours", "21–50 hours", ">50 hours"], index=0)
+    ai_hours = st.selectbox("What is your current level of AI expertise?", ["", "None", "Low", "Medium", "High", "Expert"], index=0)
 with col3:
     ai_freq = st.selectbox("How often you use AI for clinical learning/teaching", ["", "Never", "<Monthly", "Monthly", "Weekly", "Daily or almost daily"], index=0)
 
 spec = st.text_input("Intended/current specialty (optional)")
 ai_tools = st.text_input("Which AI tools have you used recently? (optional)")
-langs = st.text_input("Languages you are comfortable using with patients (optional)")
 
 st.divider()
 
 # Input style (keep both; default Dots)
-input_style = st.radio("Input style", ["Dots (1–7)", "Slider (1–7)"], horizontal=True, index=0)
+input_style = st.radio("Input style", ["Dots (1–7)"], horizontal=True, index=0)
 
-# Pagination (groups of 5)
-PAGE_SIZE = 5
+# Pagination (groups of 7)
+PAGE_SIZE = 7
 TOTAL_ITEMS = len(ITEMS)
 TOTAL_PAGES = math.ceil(TOTAL_ITEMS / PAGE_SIZE)
 
@@ -248,22 +240,6 @@ with col_nav2:
         if RERUN:
             RERUN()
 
-# Compare upload (overlay vs. prior CSV)
-st.subheader("Optional: Compare with a previous attempt")
-up = st.file_uploader("Upload a prior results CSV downloaded from this app (pre or post)", type=["csv"])
-prev_scores = None
-if up is not None:
-    try:
-        prev_df = pd.read_csv(up)
-        score_cols = [c for c in prev_df.columns if c.startswith("SCORE_")]
-        if score_cols:
-            row0 = prev_df.iloc[0]
-            prev_scores = {c.replace("SCORE_", ""): float(row0[c]) for c in score_cols if pd.notna(row0[c])}
-        else:
-            prev_responses = {col: int(prev_df.iloc[0][col]) for col in prev_df.columns if col in VAR2SUB}
-            prev_scores = compute_subscale_scores(prev_responses)
-    except Exception as e:
-        st.warning(f"Could not parse uploaded CSV: {e}")
 
 # Compute
 compute = st.button("Calculate & Show Chart ⮕")
@@ -325,3 +301,20 @@ if compute:
         st.caption("To enable chart downloads, install Plotly + Kaleido (preferred) or Matplotlib.")
 
     st.success("Done. Your item-by-item responses were scored. Use the downloads above to save data and the chart.")
+
+# Compare upload (overlay vs. prior CSV)
+st.subheader("Optional: Compare with a previous attempt")
+up = st.file_uploader("Upload a prior results CSV downloaded from this app (pre or post)", type=["csv"])
+prev_scores = None
+if up is not None:
+    try:
+        prev_df = pd.read_csv(up)
+        score_cols = [c for c in prev_df.columns if c.startswith("SCORE_")]
+        if score_cols:
+            row0 = prev_df.iloc[0]
+            prev_scores = {c.replace("SCORE_", ""): float(row0[c]) for c in score_cols if pd.notna(row0[c])}
+        else:
+            prev_responses = {col: int(prev_df.iloc[0][col]) for col in prev_df.columns if col in VAR2SUB}
+            prev_scores = compute_subscale_scores(prev_responses)
+    except Exception as e:
+        st.warning(f"Could not parse uploaded CSV: {e}")

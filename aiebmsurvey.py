@@ -742,7 +742,6 @@ if compute:
                 "Domain": FULL_NAMES[s],
                 "Abbrev.": s,
                 "Score": subscale_scores.get(s, np.nan),
-                "Shown on spider diagram": "Yes",
             }
             for s in SUBSCALES
         ]

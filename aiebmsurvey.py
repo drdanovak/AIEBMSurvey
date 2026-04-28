@@ -44,11 +44,12 @@ except Exception:
 # ==========================
 LIKERT7_LEGEND = "1 = Strongly disagree … 7 = Strongly agree"
 
-# The core spider/radar chart intentionally excludes Behavioral Intentions.
-# Intentions are useful implementation outcomes, but they are different from current readiness/skill.
+# The spider/radar chart includes six readiness domains plus Behavioral/Implementation Intentions.
+# The readiness mean still excludes INTENT because intentions describe planned future behavior rather than current skill.
 READINESS_SUBSCALES = ["AILIT", "VERIF", "EQUITY", "TRUST", "COMM", "PRO"]
 INTENTION_SUBSCALES = ["INTENT"]
 SUBSCALES = READINESS_SUBSCALES + INTENTION_SUBSCALES
+CHART_SUBSCALES = SUBSCALES
 
 FULL_NAMES = {
     "AILIT": "AI-EBM Literacy",
@@ -279,7 +280,7 @@ def readiness_mean(subscale_scores: dict[str, float]) -> float:
 
 
 def radar_plot(scores_now: dict[str, float]):
-    cats = READINESS_SUBSCALES
+    cats = CHART_SUBSCALES
     r_now = [scores_now.get(c, 0) if not pd.isna(scores_now.get(c, np.nan)) else 0 for c in cats]
     cats_closed = cats + [cats[0]]
     r_now_closed = r_now + [r_now[0]]
@@ -291,7 +292,7 @@ def radar_plot(scores_now: dict[str, float]):
                 r=r_now_closed,
                 theta=cats_closed,
                 fill="toself",
-                name="Current readiness",
+                name="Current profile",
                 opacity=0.72,
             )
         )
@@ -300,7 +301,7 @@ def radar_plot(scores_now: dict[str, float]):
             showlegend=False,
             margin=dict(l=20, r=20, t=35, b=20),
             height=540,
-            title="AI-EBM Readiness Profile",
+            title="AI-EBM Readiness and Implementation Profile",
         )
         return fig
     elif MATPLOTLIB_OK and plt is not None:
@@ -312,7 +313,7 @@ def radar_plot(scores_now: dict[str, float]):
         ax.set_thetagrids(np.degrees(angles), labels=cats)
         ax.plot(angles_closed, r_now_closed)
         ax.fill(angles_closed, r_now_closed, alpha=0.25)
-        ax.set_title("AI-EBM Readiness Profile")
+        ax.set_title("AI-EBM Readiness and Implementation Profile")
         return fig
     else:
         return None
@@ -430,50 +431,88 @@ def make_custom_narrative(subscale_scores: dict[str, float]) -> tuple[list[str],
 
 def make_spider_interpretation(subscale_scores: dict[str, float]) -> str:
     readiness = readiness_mean(subscale_scores)
-    highs = topk(subscale_scores, READINESS_SUBSCALES, k=2, reverse=True)
-    lows = topk(subscale_scores, READINESS_SUBSCALES, k=2, reverse=False)
-    values = [subscale_scores.get(s, np.nan) for s in READINESS_SUBSCALES]
+    intent = subscale_scores.get("INTENT", np.nan)
+    highs = topk(subscale_scores, CHART_SUBSCALES, k=2, reverse=True)
+    lows = topk(subscale_scores, CHART_SUBSCALES, k=2, reverse=False)
+    values = [subscale_scores.get(s, np.nan) for s in CHART_SUBSCALES]
     values = [float(v) for v in values if not pd.isna(v)]
     spread = round(max(values) - min(values), 2) if values else np.nan
-    intent = subscale_scores.get("INTENT", np.nan)
 
     lines = []
-    lines.append("The spider diagram shows your self-rated AI-EBM readiness across six domains. Scores closer to the center indicate lower confidence or less readiness; scores closer to the outer edge indicate higher confidence or readiness. The goal is not a perfect circle or all 7s. A useful profile shows where you can safely rely on current strengths and where you should slow down, verify, ask for supervision, or practice more deliberately.")
+    lines.append(
+        "The spider diagram shows your self-rated AI-EBM profile across seven domains. Six domains reflect current readiness and skill: AI-EBM Literacy, Verification & Provenance, Bias & Equity, Calibration & Trust, Patient Communication, and Professional Responsibility & Workflow Safety. The seventh domain, Implementation Intentions, reflects how strongly you plan to apply these practices in the next month. Scores closer to the center indicate lower confidence, readiness, or intention; scores closer to the outer edge indicate higher confidence, readiness, or intention. The goal is not a perfect circle or all 7s. A useful profile shows where you can safely rely on current strengths, where you should slow down or seek supervision, and whether your planned follow-through matches your readiness."
+    )
 
     if not pd.isna(readiness):
         if readiness >= 5.5:
-            lines.append(f"Your overall readiness profile is high ({readiness:.2f}/7). Use the diagram to identify which domains should become teaching or leadership strengths, while still maintaining verification and documentation habits.")
+            lines.append(
+                f"Your six-domain readiness mean is high ({readiness:.2f}/7). Use the diagram to identify which domains should become teaching or leadership strengths, while still maintaining verification and documentation habits."
+            )
         elif readiness >= 4.0:
-            lines.append(f"Your overall readiness profile is developing ({readiness:.2f}/7). You likely have usable baseline skills, but the lower-scoring domains are the places where structured checklists and supervision will matter most.")
+            lines.append(
+                f"Your six-domain readiness mean is developing ({readiness:.2f}/7). You likely have usable baseline skills, but the lower-scoring domains are the places where structured checklists and supervision will matter most."
+            )
         else:
-            lines.append(f"Your overall readiness profile is early-stage ({readiness:.2f}/7). Treat AI outputs as provisional, use the course templates closely, and prioritize evidence verification, documentation, and supervisory review.")
+            lines.append(
+                f"Your six-domain readiness mean is early-stage ({readiness:.2f}/7). Treat AI outputs as provisional, use the course templates closely, and prioritize evidence verification, documentation, and supervisory review."
+            )
 
     if highs:
         top_text = ", ".join([f"{FULL_NAMES[s]} ({v:.2f})" for s, v in highs])
-        lines.append(f"Your strongest area(s) are {top_text}. These are the domains you can use as anchors while developing the rest of your AI-EBM workflow.")
+        lines.append(
+            f"Your highest plotted domain(s) are {top_text}. These are the domains you can use as anchors while developing the rest of your AI-EBM workflow."
+        )
 
     if lows:
         low_text = ", ".join([f"{FULL_NAMES[s]} ({v:.2f})" for s, v in lows])
-        lines.append(f"Your priority growth area(s) are {low_text}. When the course asks you to verify, communicate, or document AI use, pay special attention to these domains.")
+        lines.append(
+            f"Your lowest plotted domain(s) are {low_text}. When the course asks you to verify, communicate, document, or implement AI use, pay special attention to these domains."
+        )
 
     if not pd.isna(spread):
         if spread >= 2.0:
-            lines.append(f"Your profile is uneven, with a {spread:.2f}-point gap between your highest and lowest readiness domains. That kind of spiky shape means your next step is not simply to use AI more, but to balance your workflow so that strengths do not mask vulnerabilities.")
+            lines.append(
+                f"Your plotted profile is uneven, with a {spread:.2f}-point gap between your highest and lowest domains. That spiky shape means your next step is not simply to use AI more, but to balance your workflow so that strengths do not mask vulnerabilities."
+            )
         elif spread >= 1.0:
-            lines.append(f"Your profile has moderate variation, with a {spread:.2f}-point gap across domains. Look for the one or two domains that lag behind and use the action plan below to bring them closer to your stronger areas.")
+            lines.append(
+                f"Your plotted profile has moderate variation, with a {spread:.2f}-point gap across domains. Look for the one or two domains that lag behind and use the action plan below to bring them closer to your stronger areas."
+            )
         else:
-            lines.append(f"Your profile is relatively balanced, with only a {spread:.2f}-point gap across domains. A balanced shape is useful, but still review whether the whole profile is high, developing, or early-stage.")
+            lines.append(
+                f"Your plotted profile is relatively balanced, with only a {spread:.2f}-point gap across domains. A balanced shape is useful, but still review whether the whole profile is high, developing, or early-stage."
+            )
 
     if not pd.isna(intent):
         if intent >= 5.5:
-            lines.append(f"Your Implementation Intentions score is high ({intent:.2f}/7), suggesting that you are ready to translate the course practices into near-term behavior.")
+            lines.append(
+                f"Your Implementation Intentions score is high ({intent:.2f}/7), suggesting that you are ready to translate the course practices into near-term behavior. If your readiness domains are lower than this intention score, pair your motivation with templates, checklists, and supervision."
+            )
         elif intent >= 4.0:
-            lines.append(f"Your Implementation Intentions score is moderate ({intent:.2f}/7). Choose one small, observable habit, such as logging sources or checking a guideline, to make the course transfer into practice.")
+            lines.append(
+                f"Your Implementation Intentions score is moderate ({intent:.2f}/7). Choose one small, observable habit, such as logging sources or checking a guideline, to make the course transfer into practice."
+            )
         else:
-            lines.append(f"Your Implementation Intentions score is low ({intent:.2f}/7). Before the course ends, set one specific AI-EBM behavior you will try in the next month.")
+            lines.append(
+                f"Your Implementation Intentions score is low ({intent:.2f}/7). Before the course ends, set one specific AI-EBM behavior you will try in the next month."
+            )
+
+    if not pd.isna(readiness) and not pd.isna(intent):
+        gap = round(float(intent) - float(readiness), 2)
+        if gap >= 1.0:
+            lines.append(
+                f"Your intention score is {gap:.2f} points higher than your readiness mean. That pattern suggests enthusiasm or commitment may be outpacing current skill, so the safest next step is to use the course verification and documentation tools before applying AI independently."
+            )
+        elif gap <= -1.0:
+            lines.append(
+                f"Your intention score is {abs(gap):.2f} points lower than your readiness mean. That pattern suggests you may have more capability than near-term plans to use it, so consider identifying one realistic clinical learning or documentation task where AI-EBM habits would be useful."
+            )
+        else:
+            lines.append(
+                "Your intention score is closely aligned with your readiness mean. That balance suggests your planned follow-through is reasonably calibrated to your current self-rated skills."
+            )
 
     return "\n\n".join(lines)
-
 
 def make_canvas_report(
     timestamp_iso: str,
@@ -568,7 +607,7 @@ def make_canvas_report(
 
     lines.append("Notes")
     lines.append("-----")
-    lines.append("Scores are means per subscale. 1 = Strongly disagree … 7 = Strongly agree. The spider diagram displays six readiness domains only; Implementation Intentions are reported separately because they reflect planned future behavior rather than current skill or confidence. Lower completion may reduce score stability.")
+    lines.append("Scores are means per subscale. 1 = Strongly disagree … 7 = Strongly agree. The spider diagram displays six readiness domains plus Implementation Intentions. The readiness mean excludes Implementation Intentions because intentions reflect planned future behavior rather than current skill or confidence. Lower completion may reduce score stability.")
     return "\n".join(lines)
 
 
@@ -582,7 +621,7 @@ with left:
 
 with right:
     st.info(
-        "This survey is a self-assessment of AI-EBM readiness. The spider diagram summarizes six readiness domains. Implementation Intentions are scored separately because they describe planned future behavior."
+        "This survey is a self-assessment of AI-EBM readiness. The spider diagram summarizes six readiness domains plus Implementation Intentions, which describe planned future behavior."
     )
 
 # Demographics first
@@ -678,7 +717,7 @@ if compute:
     }
 
     st.subheader("Subscale Spider Diagram (1–7)")
-    st.caption("The spider diagram displays the six AI-EBM readiness domains. Implementation Intentions are reported separately below.")
+    st.caption("The spider diagram displays six AI-EBM readiness domains plus Implementation Intentions as a seventh axis.")
     fig = radar_plot(subscale_scores)
 
     if PLOTLY_OK and isinstance(fig, go.Figure):
@@ -694,7 +733,7 @@ if compute:
     with st.expander("Subscale key", expanded=False):
         for s in READINESS_SUBSCALES:
             st.markdown(f"- **{FULL_NAMES[s]} ({s})** — {SHORT_DEFINITIONS[s]}")
-        st.markdown(f"- **{FULL_NAMES['INTENT']} (INTENT)** — {SHORT_DEFINITIONS['INTENT']} This score is not shown on the spider diagram.")
+        st.markdown(f"- **{FULL_NAMES['INTENT']} (INTENT)** — {SHORT_DEFINITIONS['INTENT']} This score appears on the spider diagram as the seventh axis.")
 
     st.subheader("Scores")
     score_df = pd.DataFrame(
@@ -703,7 +742,7 @@ if compute:
                 "Domain": FULL_NAMES[s],
                 "Abbrev.": s,
                 "Score": subscale_scores.get(s, np.nan),
-                "Shown on spider diagram": "Yes" if s in READINESS_SUBSCALES else "No",
+                "Shown on spider diagram": "Yes",
             }
             for s in SUBSCALES
         ]
